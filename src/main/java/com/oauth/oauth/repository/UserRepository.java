@@ -13,5 +13,5 @@ public interface UserRepository extends JpaRepository<User, Long> {
     * If the user is not found, the findById method returns an empty Optional object,
     * which allows us to avoid NullPointerException by calling orElse method on it.
     */
-    Optional<User> findByEmail(String email);
+    Boolean existsByEmail(String email);
 }

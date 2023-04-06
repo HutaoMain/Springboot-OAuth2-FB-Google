@@ -1,58 +1,61 @@
 package com.oauth.oauth.controller;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.oauth.oauth.api.facebook.Facebook;
+import com.oauth.oauth.api.facebook.Profile;
+import com.oauth.oauth.model.User;
+import com.oauth.oauth.repository.UserRepository;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-import java.io.IOException;
-import java.util.Map;
-
+import java.util.Optional;
 
 @Slf4j
 @RestController
 @CrossOrigin("*")
 public class FacebookController {
 
-    @Value("${spring.security.oauth2.client.registration.facebook.redirectUri}")
-    private String redirectUri; // redirectCallback
+    @Autowired
+    UserRepository userRepository;
 
-    @Value("${spring.security.oauth2.client.provider.facebook.authorizationUri}")
-    private String authorizationUri;
+    private final Facebook facebook;
 
-    @Value("${spring.security.oauth2.client.registration.facebook.scope}")
-    private String scope;
-
-    @Value("${spring.security.oauth2.client.registration.facebook.clientId}")
-    private String clientId;
-
-    @Value("${client.url}")
-    private String clientUrl;
-
-
-    @GetMapping("/auth/facebook")
-    public void startFacebookAuth(HttpServletRequest request, HttpServletResponse response) {
-        try {
-            String facebookAuthorizeUrl = authorizationUri + "?response_type=code&redirect_uri=" + redirectUri + "&scope=" + scope + "&client_id=" + clientId;
-            log.info("Facebook OAuth Login Initiated");
-            facebookAuthorizeUrl = facebookAuthorizeUrl
-                    .replace("{redirect_uri}", redirectUri)
-                    .replace("{scope}", scope)
-                    .replace("{client_id}", clientId);
-            response.sendRedirect(facebookAuthorizeUrl);
-        } catch (IOException e) {
-            log.error("Error while initiating Facebook OAuth Login: {}", e.getMessage());
-            e.printStackTrace();
-        }
+    @Autowired
+    public FacebookController(Facebook facebook) {
+        this.facebook = facebook;
     }
 
-    @GetMapping("/oauth2/callback/facebook")
-    public Map<String, Object> currentUser(OAuth2AuthenticationToken oAuth2AuthenticationToken) {
-        log.info("principal: {}", oAuth2AuthenticationToken.getPrincipal().getAttributes());
-        return oAuth2AuthenticationToken.getPrincipal().getAttributes();
+    @GetMapping("/user")
+    public String getProfileAndSave(Model model) throws JsonProcessingException {
+        Profile profile = facebook.getProfile();
+        ObjectMapper objectMapper = new ObjectMapper();
+        String profileJson = objectMapper.writeValueAsString(profile);
+        log.info("Facebook Profile JSON: {}", profileJson);
+
+        String email = profile.getEmail();
+        boolean emailExists = userRepository.existsByEmail(email);
+
+        if (emailExists) {
+            log.info("User with email {} already exists in the database, skipping save", email);
+        } else {
+            User user = new User();
+            user.setEmail(email);
+            user.setUsername(email);
+            user.setName(profile.getName());
+            user.setImageUrl(profile.getPicture().getData().getUrl());
+            userRepository.save(user);
+            log.info("User saved to database with email {}", email);
+        }
+
+        model.addAttribute("profile", profile);
+        model.addAttribute("email", profile.getEmail());
+        model.addAttribute("pictureUrl", profile.getPicture().getData().getUrl());
+        log.info("model {}", model);
+        return "home";
     }
 }
